@@ -36,15 +36,20 @@ class hackTickets(object):
         path = os.path.join(os.getcwd(), config_file)
 
         cp = ConfigParser()
+        
         try:
             # 指定读取config.ini编码格式，防止中文乱码（兼容windows）
             cp.readfp(codecs.open(config_file, "r", "utf-8-sig"))
+            #cp.read(path ,"r", "utf-8-sig")
         except IOError as e:
             print(u'打开配置文件"%s"失败, 请先创建或者拷贝一份配置文件config.ini' % (config_file))
             input('Press any key to continue')
             sys.exit()
         # 登录名
         self.username = cp.get("login", "username")
+        #self.username = cp['login']['username']
+
+
         # 密码
         self.passwd = cp.get("login", "password")
         # 始发站
@@ -56,10 +61,12 @@ class hackTickets(object):
         self.ends = self.convertCityToCode(ends_city).encode('unicode_escape').decode("utf-8").replace("\\u", "%u").replace(",", "%2c")
         # 乘车时间
         self.dtime = cp.get("cookieInfo", "dtime")
+        #self.dtime = input('乘车日期:')
         # 车次
-        orderStr = cp.get("orderItem", "order")
+        self.order = cp.get("orderItem", "order").split(",")
+        #self.order = input('车次所在行:').split(",")
         # 配置文件中的是字符串，转换为int
-        self.order = int(orderStr)
+        #self.order = int(orderStr)
         # 乘客名
         self.users = cp.get("userInfo", "users").split(",")
         # 车次类型
@@ -70,11 +77,12 @@ class hackTickets(object):
         self.ticket_url = cp.get("urlInfo", "ticket_url")
         self.login_url = cp.get("urlInfo", "login_url")
         self.initmy_url = cp.get("urlInfo", "initmy_url")
-        self.buy = cp.get("urlInfo", "buy")
+        self.buy =cp.get("urlInfo", "buy")
+ 
 
         # 席别
-        seat_type = cp.get("confirmInfo", "seat_type")
-        self.seatType = self.seatMap[seat_type] if seat_type in self.seatMap else ""
+        self.seat_type = cp.get("confirmInfo", "seat_type").split(",")
+        #self.seatType = self.seatMap[self.seat_type] if self.seat_type in self.seatMap else ""
 
         # 是否允许分配无座
         noseat_allow = cp.get("confirmInfo", "noseat_allow")
@@ -120,16 +128,16 @@ class hackTickets(object):
     """加载席别编码"""
     def loadSeatType(self):
         self.seatMap = {
-            "硬座" : "1",
-            "硬卧" : "3",
-            "软卧" : "4",
-            "一等软座" : "7",
-            "二等软座" : "8",
-            "商务座" : "9",
-            "一等座" : "M",
-            "二等座" : "O",
-            "混编硬座" : "B",
-            "特等座" : "P"
+            "1":"硬座",
+            "3":"硬卧",
+            "4":"软卧",
+            "7":"一等软座",
+            "8":"二等软座",
+            "9":"商务座",
+            "M":"一等座",
+            "O":"二等座",
+            "B":"混编硬座",
+            "P":"特等座" 
         }
 
     def __init__(self):
@@ -162,15 +170,15 @@ class hackTickets(object):
 
     """更多查询条件"""
     def searchMore(self):
+        train_type_dict = {'T': u'T-特快',                # 特快
+                    'G': u'GC-高铁/城际',         # 高铁
+                    'D': u'D-动车',               # 动车
+                    'Z': u'Z-直达',               # 直达
+                    'K': u'K-快速'                # 快速
+                    }
         # 选择车次类型
         for type in self.train_types:
             # 车次类型选择
-            train_type_dict = {'T': u'T-特快',                # 特快
-                                'G': u'GC-高铁/城际',         # 高铁
-                                'D': u'D-动车',               # 动车
-                                'Z': u'Z-直达',               # 直达
-                                'K': u'K-快速'                # 快速
-                                }
             if type == 'T' or type == 'G' or type == 'D' or type == 'Z' or type == 'K':
                 print(u'--------->选择的车次类型', train_type_dict[type])
                 self.driver.find_by_text(train_type_dict[type]).click()
@@ -195,17 +203,28 @@ class hackTickets(object):
         self.driver.cookies.add({"_jc_save_fromDate": self.dtime})
 
     def specifyTrainNo(self):
-        count=0
+        count = 0
         while self.driver.url == self.ticket_url:
             # 勾选车次类型，发车时间
             self.searchMore();
             sleep(0.05)
             self.driver.find_by_text(u"查询").click()
             count += 1
-            print(u"循环点击查询... 第 %s 次" % count)
-
+            print(u"第 %s 次刷票" % count)
             try:
-                self.driver.find_by_text(u"预订")[self.order - 1].click()
+                #test=self.driver.find_by_text(u"预订")#[self.order - 1]
+                trains=self.driver.find_by_xpath('//*[@id="queryLeftTable"]/tr')
+                for intorder in self.order:
+                    train=trains[(int(intorder)-1)*2]
+                    tds=train.find_by_tag("td")
+                    if (tds[3].text !="--" and tds[3].text!=u"无" and tds[3].text!=u"候补" and tds[3].text!=u"*") or ( tds[7].text !="--" and tds[7].text!=u"无" and tds[7].text!=u"候补" and tds[7].text!=u"*"): #or (tds[9].text !="--" and tds[9].text!=u"无" and tds[9].text!=u"候补"):
+                        tds[12].click()
+                        while True:
+                            if self.driver.url != self.buy:
+                                sleep(1)
+                            else:
+                                break
+                        return
                 sleep(0.3)
             except Exception as e:
                 print(e)
@@ -213,15 +232,14 @@ class hackTickets(object):
                 continue
 
     def buyOrderZero(self):
-        count=0
+        count = 0
         while self.driver.url == self.ticket_url:
             # 勾选车次类型，发车时间
             self.searchMore();
             sleep(0.05)
             self.driver.find_by_text(u"查询").click()
             count += 1
-            print(u"循环点击查询... 第 %s 次" % count)
-
+            print(u"第 %s 次刷票" % count)
             try:
                 for i in self.driver.find_by_text(u"预订"):
                     i.click()
@@ -235,16 +253,30 @@ class hackTickets(object):
 
     def selUser(self):
         print(u'开始选择用户...')
+        #sleep(0.05)
         for user in self.users:
             self.driver.find_by_text(user).last.click()
 
     def confirmOrder(self):
         print(u"选择席别...")
-        if self.seatType:
-            self.driver.find_by_value(self.seatType).click()
-        else:
-            print(u"未指定席别，按照12306默认席别")
-
+        for type in self.seat_type:
+            # 车次类型选择
+            #if type == '1' or type == '3' or type == '4' or type == '7' or type == '8' or type == '9' or type == 'M' or type == 'O' or type == 'B' or type == 'P':
+            try: 
+                print(u'--------->选择席别类型', self.seatMap[type])
+                #sleep(1)
+                sel=self.driver.find_by_id("seatType_1").find_by_value(type)
+                if sel:
+                    sel.click()
+                    return True
+                else:
+                    print(u"席别为空")
+                    continue
+            except Exception as e:
+                print(e)
+                print(u"不存在设置的席别")
+                return False
+        return False
     def submitOrder(self):
         print(u"提交订单...")
         sleep(1)
@@ -253,17 +285,21 @@ class hackTickets(object):
     def confirmSeat(self):
         # 若提交订单异常，请适当加大sleep的时间
         sleep(1)
-        print(u"确认选座...")
-        if self.driver.find_by_text(u"硬座余票<strong>0</strong>张") == None:
-            self.driver.find_by_id('qr_submit_id').click()
-        else:
+        print(u"确认订单...")
+        str=self.driver.find_by_text(u"余票<strong>0</strong>张")
+        if str:
             if self.noseat_allow == 0:
                 self.driver.find_by_id('back_edit_id').click()
+                return False
             elif self.noseat_allow == 1:
                 self.driver.find_by_id('qr_submit_id').click()
+                return True
+        else:
+            self.driver.find_by_id('qr_submit_id').click()
+            return True
 
     def buyTickets(self):
-        t = time.clock()
+        #t = time.clock()
         try:
             print(u"购票页面开始...")
 
@@ -286,32 +322,43 @@ class hackTickets(object):
             # 选择用户
             self.selUser()
             # 确认订单
-            self.confirmOrder()
+            if not self.confirmOrder():
+                return False
             # 提交订单
             self.submitOrder()
             # 确认选座
-            self.confirmSeat()
-
-            print(time.clock() - t)
+            if not self.confirmSeat():
+                return False
+            return True
+            #print(time.clock() - t)
 
         except Exception as e:
             print(e)
+            return False
 
     """入口函数"""
     def start(self):
         # 初始化驱动
         self.driver=Browser(driver_name=self.driver_name,executable_path=self.executable_path)
         # 初始化浏览器窗口大小
-        self.driver.driver.set_window_size(1400, 1000)
+        self.driver.driver.set_window_size(1300, 1000)
 
         # 登录，自动填充用户名、密码，自旋等待输入验证码，输入完验证码，点登录后，访问 tick_url（余票查询页面）
         self.login()
+        count=0
+        while True:
+            count += 1
+            print(u"第 %s 次抢票" % count)
+            # 登录成功，访问余票查询页面
+            self.driver.visit(self.ticket_url)
+            # 自动购买车票
+            if self.buyTickets():
+                rel=self.repeat = input('是否继续抢票，1->继续：')
+                if rel !='1':
+                    return
+            else:
+                continue
 
-        # 登录成功，访问余票查询页面
-        self.driver.visit(self.ticket_url)
-
-        # 自动购买车票
-        self.buyTickets();
 
 if __name__ == '__main__':
     print("===========hack12306 begin===========")

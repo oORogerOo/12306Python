@@ -5,6 +5,7 @@
 北京西:BXP
 广州南:IZQ
 重庆北:CUW
+重庆西:CXW
 重庆:CQW
 重庆南:CRW
 广州东:GGQ
